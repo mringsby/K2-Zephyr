@@ -1,4 +1,4 @@
-# NUCLEO-F767ZI + Zephyr (LED + Ethernet)
+# NUCLEO-F767ZI + Zephyr
 
 Board docs: https://docs.zephyrproject.org/latest/boards/st/nucleo_f767zi/doc/index.html
 
