@@ -1,0 +1,27 @@
+/*
+ * Device Tree Overlay for NUCLEO-F767ZI Ethernet Configuration
+ * 
+ * This overlay configures the STM32F767ZI's built-in Ethernet MAC
+ * to work with the LAN8742A PHY chip on the NUCLEO board.
+ */
+
+&mac {
+	status = "okay";
+	pinctrl-0 = <&eth_mdc_pc1 &eth_mdio_pa2 &eth_rxd0_pc4 &eth_rxd1_pc5
+		     &eth_tx_en_pg11 &eth_txd0_pg13 &eth_txd1_pb13
+		     &eth_rx_dv_pa7 &eth_ref_clk_pa1>;
+	pinctrl-names = "default";
+	phy-handle = <&phy0>;
+};
+
+&mdio {
+	status = "okay";
+	pinctrl-0 = <&eth_mdc_pc1 &eth_mdio_pa2>;
+	pinctrl-names = "default";
+
+	phy0: ethernet-phy@0 {
+		compatible = "ethernet-phy";
+		reg = <0>;
+		status = "okay";
+	};
+};

@@ -14,7 +14,7 @@ west build -b nucleo_f767zi K2-Zephyr -d build/app
 west flash -d build/app
 ```
 
-Optionally on WSL
+Optionally on WSL or if STM32CubeProgrammer not installed:
 ```
 west flash -d build/app --runner openocd
 ```

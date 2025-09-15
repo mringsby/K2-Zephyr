@@ -5,6 +5,7 @@
  * 1. GPIO control (blinking LED)
  * 2. Real-time scheduling (periodic tasks)
  * 3. Logging system for debug output
+ * 4. Networking (UDP server)
  * 
  * Target Hardware: ST NUCLEO-F767ZI development board
  * - Green LED on pin PA5 (controlled via GPIO)
@@ -15,6 +16,14 @@
 #include <zephyr/kernel.h>          // Core RTOS functions (threads, timing, etc.)
 #include <zephyr/drivers/gpio.h>    // GPIO driver for LED control
 #include <zephyr/logging/log.h>     // Logging system for debug messages
+#include <zephyr/net/socket.h>      // BSD socket API for UDP networking
+#include <zephyr/net/net_if.h>      // Network interface management
+#include <zephyr/net/net_mgmt.h>    // Network management events
+#include <zephyr/net/dhcpv4.h>      // DHCP client functions
+#include <stdio.h>                  // For snprintf
+#include <string.h>                 // For strlen, memset
+#include <stdlib.h>                 // For strtol
+#include <errno.h>                  // For errno
 
 // Register this source file as a log module named "k2_app" with INFO level
 // This allows us to use LOG_INF(), LOG_ERR(), etc. in our code
@@ -48,13 +57,151 @@ static void led_init(void)
         return;
     }
     
-    // Configure the pin as an output with active state
-    // GPIO_OUTPUT_ACTIVE means the pin will drive high when "active"
-    int ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+    // Configure as output; set initial level explicitly for portability
+    int ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
     if (ret < 0) {
         LOG_ERR("Failed to configure LED GPIO: %d", ret);
     } else {
+        // Ensure LED starts OFF
+        gpio_pin_set_dt(&led, 0);
         LOG_INF("LED initialized successfully on pin PA5");
+    }
+}
+
+// Network configuration
+#define UDP_PORT 12345
+#define RECV_BUFFER_SIZE 64
+
+// Network management callback for DHCP events
+static struct net_mgmt_event_callback mgmt_cb;
+static bool network_ready = false;
+
+// UDP socket and thread variables
+static int udp_sock = -1;
+static K_THREAD_STACK_DEFINE(udp_thread_stack, 2048);
+static struct k_thread udp_thread_data;
+
+/*
+ * Network management event handler
+ * Called when network events occur (like DHCP lease acquired)
+ */
+static void net_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                   uint64_t mgmt_event, struct net_if *iface)
+{
+    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND) {
+        LOG_INF("DHCP lease acquired - network is ready");
+        network_ready = true;
+    }
+}
+
+/*
+ * Initialize networking subsystem
+ * Sets up DHCP and network event callbacks
+ */
+static void network_init(void)
+{
+    struct net_if *iface;
+
+    LOG_INF("Initializing network...");
+
+    // Get the default network interface (Ethernet)
+    iface = net_if_get_default();
+    if (!iface) {
+        LOG_ERR("No network interface found");
+        return;
+    }
+
+    // Setup network management event callback for DHCP
+    net_mgmt_init_event_callback(&mgmt_cb, net_mgmt_event_handler,
+                                 NET_EVENT_IPV4_DHCP_BOUND);
+    net_mgmt_add_event_callback(&mgmt_cb);
+
+    // Start DHCP client
+    net_dhcpv4_start(iface);
+    LOG_INF("DHCP client started - waiting for IP address...");
+}
+
+/*
+ * UDP server thread
+ * Listens for UDP packets and blinks LED when integer is received
+ */
+static void udp_server_thread(void *arg1, void *arg2, void *arg3)
+{
+    ARG_UNUSED(arg1);
+    ARG_UNUSED(arg2);
+    ARG_UNUSED(arg3);
+
+    struct sockaddr_in bind_addr;
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    char recv_buffer[RECV_BUFFER_SIZE];
+    int ret;
+
+    // Wait for network to be ready
+    while (!network_ready) {
+        k_sleep(K_MSEC(100));
+    }
+
+    LOG_INF("Starting UDP server on port %d", UDP_PORT);
+
+    // Create UDP socket using Zephyr socket API
+    udp_sock = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udp_sock < 0) {
+        LOG_ERR("Failed to create UDP socket: %d", udp_sock);
+        return;
+    }
+
+    // Bind socket to port
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.sin_family = AF_INET;
+    bind_addr.sin_addr.s_addr = INADDR_ANY;
+    bind_addr.sin_port = htons(UDP_PORT);
+
+    ret = zsock_bind(udp_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr));
+    if (ret < 0) {
+        LOG_ERR("Failed to bind UDP socket: %d (errno: %d)", ret, errno);
+        zsock_close(udp_sock);
+        return;
+    }
+
+    LOG_INF("UDP server listening on port %d", UDP_PORT);
+
+    while (1) {
+        // Receive UDP packet
+        ret = zsock_recvfrom(udp_sock, recv_buffer, sizeof(recv_buffer) - 1, 0,
+                             (struct sockaddr *)&client_addr, &client_addr_len);
+
+        if (ret > 0) {
+            recv_buffer[ret] = '\0';  // Null terminate
+            
+            // Try to parse as integer
+            char *endptr;
+            long received_int = strtol(recv_buffer, &endptr, 10);
+            
+            if (endptr != recv_buffer && *endptr == '\0') {
+                // Successfully parsed integer - blink LED
+                LOG_INF("Received integer: %ld from client - blinking LED", received_int);
+                
+                // Blink LED 3 times quickly
+                for (int i = 0; i < 3; i++) {
+                    gpio_pin_set_dt(&led, 1);
+                    k_sleep(K_MSEC(100));
+                    gpio_pin_set_dt(&led, 0);
+                    k_sleep(K_MSEC(100));
+                }
+                
+                // Send acknowledgment back to client
+                char ack_msg[32];
+                snprintf(ack_msg, sizeof(ack_msg), "ACK: %ld", received_int);
+                zsock_sendto(udp_sock, ack_msg, strlen(ack_msg), 0,
+                             (struct sockaddr *)&client_addr, client_addr_len);
+            } else {
+                LOG_WRN("Received non-integer data: %s", recv_buffer);
+            }
+        } else if (ret < 0) {
+            LOG_ERR("UDP receive error: %d (errno: %d)", ret, errno);
+            k_sleep(K_MSEC(100));
+        }
     }
 }
 
@@ -73,7 +220,7 @@ int main(void)
 {
     LOG_INF("=== K2 Zephyr Application Starting ===");
     LOG_INF("Board: %s", CONFIG_BOARD);
-    LOG_INF("Features: LED control");
+    LOG_INF("Features: LED control, Ethernet, UDP server");
     
     /* 
      * INITIALIZATION PHASE
@@ -83,17 +230,26 @@ int main(void)
     // Initialize the LED GPIO pin
     led_init();
     
+    // Initialize networking
+    network_init();
+    
+    // Start UDP server thread
+    k_thread_create(&udp_thread_data, udp_thread_stack,
+                    K_THREAD_STACK_SIZEOF(udp_thread_stack),
+                    udp_server_thread, NULL, NULL, NULL,
+                    K_PRIO_COOP(7), 0, K_NO_WAIT);
+
     /*
      * MAIN APPLICATION LOOP
      * 
-     * This infinite loop is the "main thread" of our application.
-     * In a real-time system like Zephyr, multiple threads can run
-     * concurrently, but this simple example uses just one thread.
+     * Continue blinking LED normally, but UDP thread will handle
+     * network packets and do additional LED blinking when integers arrive
      */
     bool led_state = false;  // Track current LED state (on/off)
     uint32_t loop_count = 0; // Count how many times we've blinked
     
-    LOG_INF("Starting main loop - LED will blink every second");
+    LOG_INF("Starting main loop - LED will blink every 2 seconds");
+    LOG_INF("UDP server will blink LED rapidly when receiving integers");
     
     while (1) {  // Infinite loop - runs forever
         // Toggle LED state: if it was off, turn it on (and vice versa)
@@ -102,25 +258,19 @@ int main(void)
         
         // Increment counter and log current state
         loop_count++;
-        LOG_INF("Loop #%u: LED toggled - state: %s", 
-                loop_count, led_state ? "ON" : "OFF");
+        if (network_ready) {
+            LOG_INF("Loop #%u: LED toggled - Network ready, UDP listening", loop_count);
+        } else {
+            LOG_INF("Loop #%u: LED toggled - Waiting for network...", loop_count);
+        }
         
-        /*
-         * Sleep for 1 second
-         * 
-         * k_sleep() suspends this thread and lets other threads run.
-         * This is crucial in real-time systems - we don't want to
-         * "busy wait" and waste CPU cycles.
-         * 
-         * K_SECONDS(1) creates a timeout value of 1 second.
-         * During this time, the RTOS can:
-         * - Run system maintenance tasks
-         * - Put CPU in low-power mode if no other work to do
-         */
-        k_sleep(K_SECONDS(1));
+        // Sleep for 2 seconds (longer interval to distinguish from UDP blinks)
+        k_sleep(K_SECONDS(2));
     }
     
-    // This line never executes in an embedded system, but good practice
-    // to include it for completeness
+    // Cleanup (never reached in embedded systems)
+    if (udp_sock >= 0) {
+        zsock_close(udp_sock);
+    }
     return 0;
 }
