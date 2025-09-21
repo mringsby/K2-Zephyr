@@ -3,7 +3,7 @@
 #include <zephyr/net/socket.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
-#include <zephyr/net/dhcpv4.h>
+#include <zephyr/net/net_ip.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +17,12 @@ LOG_MODULE_DECLARE(k2_app);
 #define UDP_PORT 12345
 #define RECV_BUFFER_SIZE 64
 
-// Network management callback for DHCP events
+// Static IP configuration
+#define STATIC_IP_ADDR "192.168.1.100"
+#define STATIC_NETMASK "255.255.255.0"
+#define STATIC_GATEWAY "192.168.1.1"
+
+// Network management callback for interface events
 static struct net_mgmt_event_callback mgmt_cb;
 bool network_ready = false;
 
@@ -29,17 +34,76 @@ struct k_thread udp_thread_data;
 static void net_mgmt_event_handler(struct net_mgmt_event_callback *cb,
                                    uint64_t mgmt_event, struct net_if *iface)
 {
-    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND) {
-        LOG_INF("DHCP lease acquired - network is ready");
+    if (mgmt_event == NET_EVENT_IF_UP) {
+        LOG_INF("Network interface is up - network is ready");
         network_ready = true;
+    } else if (mgmt_event == NET_EVENT_IF_DOWN) {
+        LOG_WRN("Network interface is down");
+        network_ready = false;
     }
+}
+
+static int parse_ipv4_addr(const char *str, struct in_addr *addr)
+{
+    unsigned int a, b, c, d;
+    
+    if (sscanf(str, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
+        return -EINVAL;
+    }
+    
+    if (a > 255 || b > 255 || c > 255 || d > 255) {
+        return -EINVAL;
+    }
+    
+    addr->s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
+    return 0;
+}
+
+static int configure_static_ip(struct net_if *iface)
+{
+    struct in_addr addr;
+    struct in_addr netmask;
+    struct in_addr gateway;
+    int ret;
+
+    // Configure IP address
+    ret = parse_ipv4_addr(STATIC_IP_ADDR, &addr);
+    if (ret < 0) {
+        LOG_ERR("Invalid IP address format: %s", STATIC_IP_ADDR);
+        return -EINVAL;
+    }
+    net_if_ipv4_addr_add(iface, &addr, NET_ADDR_MANUAL, 0);
+
+    // Configure netmask
+    ret = parse_ipv4_addr(STATIC_NETMASK, &netmask);
+    if (ret < 0) {
+        LOG_ERR("Invalid netmask format: %s", STATIC_NETMASK);
+        return -EINVAL;
+    }
+    net_if_ipv4_set_netmask_by_addr(iface, &addr, &netmask);
+
+    // Configure gateway
+    ret = parse_ipv4_addr(STATIC_GATEWAY, &gateway);
+    if (ret < 0) {
+        LOG_ERR("Invalid gateway format: %s", STATIC_GATEWAY);
+        return -EINVAL;
+    }
+    net_if_ipv4_set_gw(iface, &gateway);
+
+    LOG_INF("Static IP configuration:");
+    LOG_INF("  IP: %s", STATIC_IP_ADDR);
+    LOG_INF("  Netmask: %s", STATIC_NETMASK);
+    LOG_INF("  Gateway: %s", STATIC_GATEWAY);
+
+    return 0;
 }
 
 void network_init(void)
 {
     struct net_if *iface;
+    int ret;
 
-    LOG_INF("Initializing network...");
+    LOG_INF("Initializing network with static IP...");
 
     iface = net_if_get_default();
     if (!iface) {
@@ -48,11 +112,22 @@ void network_init(void)
     }
 
     net_mgmt_init_event_callback(&mgmt_cb, net_mgmt_event_handler,
-                                 NET_EVENT_IPV4_DHCP_BOUND);
+                                 NET_EVENT_IF_UP | NET_EVENT_IF_DOWN);
     net_mgmt_add_event_callback(&mgmt_cb);
 
-    net_dhcpv4_start(iface);
-    LOG_INF("DHCP client started - waiting for IP address...");
+    ret = configure_static_ip(iface);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure static IP: %d", ret);
+        return;
+    }
+
+    net_if_up(iface);
+    
+    // Give some time for the interface to come up
+    k_sleep(K_MSEC(500));
+    network_ready = true;
+    
+    LOG_INF("Static IP configuration complete");
 }
 
 void udp_server_thread(void *arg1, void *arg2, void *arg3)
