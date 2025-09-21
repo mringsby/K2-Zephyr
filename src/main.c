@@ -40,7 +40,6 @@ int main(void)
 {
     LOG_INF("=== K2 Zephyr Application Starting ===");
     LOG_INF("Board: %s", CONFIG_BOARD);
-    LOG_INF("Features: LED control, Ethernet, UDP server");
     
     /* 
      * INITIALIZATION PHASE
@@ -59,30 +58,26 @@ int main(void)
     /*
      * MAIN APPLICATION LOOP
      * 
-     * Continue blinking LED normally, but UDP thread will handle
-     * network packets and do additional LED blinking when integers arrive
+     * Monitor network status and UDP server operation
+     * No LED blinking - UDP server now processes structured packets silently
      */
-    bool led_state = false;  // Track current LED state (on/off)
-    uint32_t loop_count = 0; // Count how many times we've blinked
+    uint32_t loop_count = 0; // Count main loop iterations
     
-    LOG_INF("Starting main loop - LED will blink every 2 seconds");
-    LOG_INF("UDP server will blink LED rapidly when receiving integers");
+    LOG_INF("Starting main loop");
+    LOG_INF("UDP server will validate structured packets (sequence + payload + CRC32)");
     
     while (1) {  // Infinite loop - runs forever
-        // Toggle LED state: if it was off, turn it on (and vice versa)
-        gpio_pin_set_dt(&led, led_state);
-        led_state = !led_state;  // Flip the boolean value
         
         // Increment counter and log current state
         loop_count++;
         if (network_ready) {
-            LOG_INF("Loop #%u: LED toggled - Network ready, UDP listening", loop_count);
+            LOG_INF("Loop #%u: Network ready, UDP server processing packets", loop_count);
         } else {
-            LOG_INF("Loop #%u: LED toggled - Waiting for network...", loop_count);
+            LOG_INF("Loop #%u: Waiting for network...", loop_count);
         }
         
-        // Sleep for 2 seconds (longer interval to distinguish from UDP blinks)
-        k_sleep(K_SECONDS(2));
+        // Sleep for 5 seconds (longer interval for status updates)
+        k_sleep(K_SECONDS(5));
     }
     
     // Cleanup (never reached in embedded systems)
