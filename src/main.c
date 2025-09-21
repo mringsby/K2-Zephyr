@@ -61,7 +61,8 @@ int main(void)
      * Monitor network status and UDP server operation
      * No LED blinking - UDP server now processes structured packets silently
      */
-    uint32_t loop_count = 0; // Count main loop iterations
+
+    //uint32_t loop_count = 0; // Count main loop iterations
     
     LOG_INF("Starting main loop");
     LOG_INF("UDP server will validate structured packets (sequence + payload + CRC32)");
@@ -69,15 +70,18 @@ int main(void)
     while (1) {  // Infinite loop - runs forever
         
         // Increment counter and log current state
-        loop_count++;
-        if (network_ready) {
-            LOG_INF("Loop #%u: Network ready, UDP server processing packets", loop_count);
-        } else {
-            LOG_INF("Loop #%u: Waiting for network...", loop_count);
-        }
+        //loop_count++;
         
-        // Sleep for 5 seconds (longer interval for status updates)
-        k_sleep(K_SECONDS(5));
+        if (network_ready) {
+            //LOG_INF("Loop #%u: Network ready, UDP server processing packets", loop_count);
+            LOG_INF("Network ready, UDP server processing packets");
+        } else {
+            //LOG_INF("Loop #%u: Waiting for network...", loop_count);
+            LOG_INF("Network not ready, waiting...");
+        }
+
+        // Sleep for 10 seconds (longer interval for status updates)
+        k_sleep(K_SECONDS(10));
     }
     
     // Cleanup (never reached in embedded systems)
