@@ -81,7 +81,7 @@ def main():
             {"seq": 100, "payload": 0x123456789ABCDEF0, "corrupt_crc": False},
             {"seq": 255, "payload": 0x5555AAAA5555AAAA, "corrupt_crc": True},
             {"seq": 254, "payload": 0x5555AAAA5555AAAA, "corrupt_crc": True},
-            {"seq": 252, "payload": 0x5555AAAA5555AAAA, "corrupt_crc": True}
+            {"seq": 252, "payload": 0x5555AAAA5555AAAA, "corrupt_crc": False}
         ]
         
         for i, test in enumerate(test_cases, 1):

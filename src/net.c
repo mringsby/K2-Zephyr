@@ -14,6 +14,7 @@
 
 // Include LED control header for visual feedback
 #include "led.h"
+#include "control.h"
 
 // Declare this module for logging purposes
 LOG_MODULE_DECLARE(k2_app);
@@ -296,7 +297,7 @@ void udp_server_thread(void *arg1, void *arg2, void *arg3)
     LOG_INF("UDP server ready on port %d", UDP_PORT); // ⚡ Essential: startup confirmation
 
     while (1) {
-        // 🚀 PERFORMANCE: Direct struct receive (no buffer copying)
+        //PERFORMANCE: Direct struct receive (no buffer copying)
         ret = zsock_recvfrom(udp_sock, &packet, sizeof(packet), 0, // ⚡ Direct to struct
                              (struct sockaddr *)&client_addr, &client_addr_len);
 
@@ -306,26 +307,29 @@ void udp_server_thread(void *arg1, void *arg2, void *arg3)
             uint64_t recv_payload = net_to_host_64(packet.payload);
             uint32_t recv_crc = ntohl(packet.crc32);
             
-            LOG_INF("=== PACKET RECEIVED ===");
-            LOG_INF("Sequence: %u", recv_sequence);
-            LOG_INF("Payload:  0x%016llX", recv_payload);
-            LOG_INF("CRC32:    0x%08X", recv_crc);
+            //LOG_INF("=== PACKET RECEIVED ===");
+            //LOG_INF("Sequence: %u", recv_sequence);
+            //LOG_INF("Payload:  0x%016llX", recv_payload);
+            //LOG_INF("CRC32:    0x%08X", recv_crc);
             
             // Calculate CRC32 for validation
             uint32_t calculated_crc = calculate_crc32(&packet, 
                 sizeof(packet.sequence) + sizeof(packet.payload));
             
-            LOG_INF("Calc CRC: 0x%08X", calculated_crc);
+            //LOG_INF("Calc CRC: 0x%08X", calculated_crc);
             
             //TESTING: Clear match/mismatch indication
             if (calculated_crc == recv_crc) {
-                LOG_INF("CRC MATCH - Packet is valid!");
-                gpio_pin_toggle_dt(&led); // Visual feedback
+                //LOG_INF("CRC MATCH - Packet is valid!");
+                //gpio_pin_toggle_dt(&led); // Visual feedback
+
+                // Forward command to control system
+                rov_send_command(recv_sequence, recv_payload);
             } else {
                 LOG_ERR("CRC MISMATCH - Packet corrupted!");
                 LOG_ERR("Expected: 0x%08X, Got: 0x%08X", calculated_crc, recv_crc);
             }
-            LOG_INF("========================");
+            //LOG_INF("========================");
             
         } else if (ret < 0) {
             LOG_ERR("UDP recv error: %d", ret);

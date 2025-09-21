@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include "led.h"
 #include "net.h"
+#include "control.h"
 
 // Register this source file as a log module named "k2_app" with INFO level
 // This allows us to use LOG_INF(), LOG_ERR(), etc. in our code
@@ -48,9 +49,15 @@ int main(void)
     
     // Initialize the LED GPIO pin
     led_init();
+
+    // Initialize ROV control system
+    rov_control_init();
     
     // Initialize networking
     network_init();
+
+    // Start ROV control thread
+    rov_control_start();
     
     // Start UDP server thread
     udp_server_start();
@@ -66,6 +73,7 @@ int main(void)
     
     LOG_INF("Starting main loop");
     LOG_INF("UDP server will validate structured packets (sequence + payload + CRC32)");
+    LOG_INF("Payload will be forwarded to ROV control system");
     
     while (1) {  // Infinite loop - runs forever
         

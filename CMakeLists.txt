@@ -27,4 +27,5 @@ set(BOARD_DEBUG_RUNNER openocd)
 # 'app' is Zephyr's standard target name for the main application binary
 target_sources(app PRIVATE src/main.c
                            src/led.c
-                           src/net.c)
+                           src/net.c
+                           src/control.c)
