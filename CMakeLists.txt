@@ -25,4 +25,6 @@ set(BOARD_DEBUG_RUNNER openocd)
 
 # Tell Zephyr to compile our main source file into the application
 # 'app' is Zephyr's standard target name for the main application binary
-target_sources(app PRIVATE src/main.c)
+target_sources(app PRIVATE src/main.c
+                           src/led.c
+                           src/net.c)

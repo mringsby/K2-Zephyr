@@ -23,3 +23,33 @@ Monitor serial (115200 baud):
 ```bash
 minicom -D /dev/ttyACM0 -b 115200
 ```
+
+
+## vscode config
+
+in .vscode folder add this and customize to your need
+
+```{
+    "configurations": [
+    {
+        "name": "Zephyr",
+        "includePath": [
+            "${workspaceFolder}/**",
+            "/home/YOUR_USERNAME/zephyrproject/zephyr/include/**",
+            "/home/YOUR_USERNAME/zephyrproject/zephyr/lib/libc/newlib/include/**",
+            "${workspaceFolder}/build/zephyr/include/generated/**",
+            "${workspaceFolder}/build/zephyr/include/**",
+            "/home/YOUR_USERNAME/zephyr-sdk-VERSION/arm-zephyr-eabi/arm-zephyr-eabi/include/**"
+        ],
+        "defines": [
+            "CONFIG_BOARD=\"nucleo_f767zi\"",
+            "__ZEPHYR__=1"
+        ],
+        "compilerPath": "/home/YOUR_USERNAME/zephyr-sdk-VERSION/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc",
+        "cStandard": "c11",
+        "cppStandard": "c++17",
+        "intelliSenseMode": "gcc-arm"
+    }
+],
+"version": 4
+}```
